@@ -9,12 +9,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Security;
-using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.Networking;
+using Windows.Networking.Sockets;
+using Windows.Storage.Streams;
 
 namespace GoogleCast
 {
@@ -55,8 +57,7 @@ namespace GoogleCast
         private IServiceProvider ServiceProvider { get; }
         private IEnumerable<IChannel> Channels { get; set; }
         private IReceiver Receiver { get; set; }
-        private Stream NetworkStream { get; set; }
-        private TcpClient TcpClient { get; set; }
+        private StreamSocket NetworkStream { get; set; }
         private SemaphoreSlim SendSemaphoreSlim { get; } = new SemaphoreSlim(1, 1);
         private SemaphoreSlim EnsureConnectionSemaphoreSlim { get; } = new SemaphoreSlim(1, 1);
         private ConcurrentDictionary<int, object> WaitingTasks { get; } = new ConcurrentDictionary<int, object>();
@@ -81,11 +82,10 @@ namespace GoogleCast
 
         private async Task Dispose(bool waitReceiveTask)
         {
-            if (TcpClient != null)
+            if (NetworkStream != null)
             {
                 WaitingTasks.Clear();
                 Dispose(NetworkStream, () => NetworkStream = null);
-                Dispose(TcpClient, () => TcpClient = null);
                 if (waitReceiveTask && ReceiveTcs != null)
                 {
                     await ReceiveTcs.Task;
@@ -137,15 +137,29 @@ namespace GoogleCast
             await Dispose();
 
             Receiver = receiver;
-            var tcpClient = new TcpClient();
-            TcpClient = tcpClient;
+            var socket = new StreamSocket();
             var ipEndPoint = receiver.IPEndPoint;
-            var host = ipEndPoint.Address.ToString();
-            await tcpClient.ConnectAsync(host, ipEndPoint.Port);
-            var secureStream = new SslStream(tcpClient.GetStream(), true, (sender, certificate, chain, sslPolicyErrors) => true);
-            await secureStream.AuthenticateAsClientAsync(host);
-            NetworkStream = secureStream;
+            var host = new HostName(ipEndPoint.Address.ToString());
+            var port = ipEndPoint.Port.ToString();
 
+            try
+            {
+                await socket.ConnectAsync(host, port, SocketProtectionLevel.Tls12);
+            }
+            catch (Exception ex)
+            {
+                if (socket.Information.ServerCertificateErrorSeverity == SocketSslErrorSeverity.Ignorable && socket.Information.ServerCertificateErrors.Count > 0)
+                {
+                    socket.Control.IgnorableServerCertificateErrors.Clear();
+                    foreach (var ignorableError in socket.Information.ServerCertificateErrors)
+                    {
+                        socket.Control.IgnorableServerCertificateErrors.Add(ignorableError);
+                    }
+                    await socket.ConnectAsync(host, port, SocketProtectionLevel.Tls12);
+                }
+            }
+
+            NetworkStream = socket;
             ReceiveTcs = new TaskCompletionSource<bool>();
             Receive();
             await GetChannel<IConnectionChannel>().ConnectAsync();
@@ -216,28 +230,19 @@ namespace GoogleCast
 
         private async Task<byte[]> ReadAsync(int bufferLength)
         {
-            var buffer = new byte[bufferLength];
-            int nb, length = 0;
-            while (length < bufferLength)
-            {
-                nb = await NetworkStream.ReadAsync(buffer, length, bufferLength - length);
-                if (nb == 0)
-                {
-                    throw new InvalidOperationException();
-                }
-                length += nb;
-            }
-            return buffer;
+            var buffer = new Windows.Storage.Streams.Buffer((uint)bufferLength);
+            await NetworkStream.InputStream.ReadAsync(buffer, buffer.Capacity, InputStreamOptions.None);
+            return buffer.ToArray();
         }
 
         private async Task EnsureConnection()
         {
-            if (TcpClient == null && Receiver != null)
+            if (NetworkStream  == null && Receiver != null)
             {
                 await EnsureConnectionSemaphoreSlim.WaitAsync();
                 try
                 {
-                    if (TcpClient == null && Receiver != null)
+                    if (NetworkStream == null && Receiver != null)
                     {
                         await ConnectAsync(Receiver);
                     }
@@ -269,10 +274,11 @@ namespace GoogleCast
                 {
                     Array.Reverse(header);
                 }
-                var networkStream = NetworkStream;
-                await networkStream.WriteAsync(header, 0, header.Length);
-                await networkStream.WriteAsync(message, 0, message.Length);
-                await networkStream.FlushAsync();
+
+                var output = NetworkStream.OutputStream;
+                await output.WriteAsync(header.AsBuffer());
+                await output.WriteAsync(message.AsBuffer());
+                await output.FlushAsync();
             }
             finally
             {
