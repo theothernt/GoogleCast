@@ -1,25 +1,6 @@
 # GoogleCast
-Implementation of the Google Cast protocol (.NET Standard 2.0 library).
+Implementation of the Google Cast protocol (for UWP only!).
 
-This [documentation](https://github.com/thibauts/node-castv2#protocol-description) was really helpful to understand the protocol.
+This is a forked and modified version designed to work with earlier versions of Windows 10 (ie. Creators Update, version 1703) to support some older Windows Phones (don’t ask!)
 
-These two others C# projects were also helpful to implement the protocol : [SharpCast](https://github.com/jpepiot/SharpCast) and [SharpCaster](https://github.com/Tapanila/SharpCaster).
-
-## Usage
-```cs
-// Use the DeviceLocator to find a Chromecast
-var receiver = (await new DeviceLocator().FindReceiversAsync()).First();
-
-var sender = new Sender();
-// Connect to the Chromecast
-await sender.ConnectAsync(receiver);
-// Launch the default media receiver application
-var mediaChannel = sender.GetChannel<IMediaChannel>();
-await sender.LaunchAsync(mediaChannel);
-// Load and play Big Buck Bunny video
-var mediaStatus = await mediaChannel.LoadAsync(
-    new Media() { ContentId = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" });
-```
-
-## Download
-[![NuGet](https://img.shields.io/nuget/v/GoogleCast.svg)](https://www.nuget.org/packages/GoogleCast)
+If you are targeting Fall Creators Update or above, please use the original version of the library which targets .NET Standard 2.0 and is available via NuGet.
