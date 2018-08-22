@@ -16,7 +16,7 @@ namespace GoogleCast
         /// </summary>
         public MessageTypes()
         {
-            AddMessageTypes(Assembly.GetExecutingAssembly());
+            AddMessageTypes(GetType().GetTypeInfo().Assembly);
         }
 
         /// <summary>
@@ -28,7 +28,7 @@ namespace GoogleCast
             var messageInterfaceType = typeof(IMessage);
             var receptionMessageAttributeType = typeof(ReceptionMessageAttribute);
             foreach (var type in assembly.GetTypes().Where(t =>
-                t.IsClass && !t.IsAbstract && t.IsDefined(receptionMessageAttributeType) && messageInterfaceType.IsAssignableFrom(t)))
+                t.GetTypeInfo().IsClass && !t.GetTypeInfo().IsAbstract && t.GetTypeInfo().IsDefined(receptionMessageAttributeType) && messageInterfaceType.IsAssignableFrom(t)))
             {
                 Add(Message.GetMessageType(type), type);
             }

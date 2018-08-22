@@ -21,8 +21,11 @@ namespace GoogleCast
 
             // Add channels
             var channelType = typeof(IChannel);
-            foreach (var type in Assembly.GetExecutingAssembly().GetTypes().Where(t =>
-                t.IsClass && !t.IsAbstract && channelType.IsAssignableFrom(t)))
+            var extension = typeof(ServiceCollectionExtensions);
+            var assembly = extension.GetTypeInfo().Assembly;
+
+            foreach (var type in assembly.GetTypes().Where(t =>
+                t.GetTypeInfo().IsClass && !t.GetTypeInfo().IsAbstract && channelType.IsAssignableFrom(t)))
             {
                 services.AddTransient(channelType, type);
             }
